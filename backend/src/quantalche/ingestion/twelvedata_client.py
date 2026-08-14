@@ -81,9 +81,13 @@ class TwelveDataClient(OHLCClient):
         now = datetime.now(timezone.utc)
         bars: list[OHLCBar] = []
         for row in payload.get("values", []):
-            open_time = datetime.strptime(
-                row["datetime"], "%Y-%m-%d %H:%M:%S"
-            ).replace(tzinfo=timezone.utc)
+            # Daily+ intervals come back as date-only ("2026-01-28"), no
+            # time component -- intraday intervals include HH:MM:SS.
+            try:
+                open_time = datetime.strptime(row["datetime"], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                open_time = datetime.strptime(row["datetime"], "%Y-%m-%d")
+            open_time = open_time.replace(tzinfo=timezone.utc)
             if open_time + duration > now:
                 # Still-forming bar -- exclude per the non-repainting rule.
                 continue
