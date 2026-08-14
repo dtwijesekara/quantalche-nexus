@@ -8,18 +8,7 @@ from pydantic import BaseModel
 from ..ingestion.models import OHLCBar
 from .base import AnalysisModule
 from .models import Bias, ModuleSignal
-
-
-class SwingKind(str, Enum):
-    HIGH = "high"
-    LOW = "low"
-
-
-class SwingPoint(BaseModel):
-    kind: SwingKind
-    index: int
-    price: float
-    at: datetime
+from .swings import SwingKind, SwingPoint, find_swings
 
 
 class StructureEventType(str, Enum):
@@ -76,50 +65,10 @@ class MarketStructureModule(AnalysisModule):
     def __init__(self, swing_strength: int = 2) -> None:
         self.swing_strength = swing_strength
 
-    def _find_swings(self, bars: list[OHLCBar]) -> list[SwingPoint]:
-        n = len(bars)
-        s = self.swing_strength
-        raw: list[SwingPoint] = []
-        for i in range(s, n - s):
-            window_idx = [j for j in range(i - s, i + s + 1) if j != i]
-            if all(bars[i].high > bars[j].high for j in window_idx):
-                raw.append(
-                    SwingPoint(
-                        kind=SwingKind.HIGH,
-                        index=i,
-                        price=bars[i].high,
-                        at=bars[i].open_time,
-                    )
-                )
-            if all(bars[i].low < bars[j].low for j in window_idx):
-                raw.append(
-                    SwingPoint(
-                        kind=SwingKind.LOW,
-                        index=i,
-                        price=bars[i].low,
-                        at=bars[i].open_time,
-                    )
-                )
-
-        # Collapse consecutive same-kind candidates to the most extreme one
-        # so the sequence strictly alternates high/low -- raw fractal
-        # detection doesn't guarantee that on its own.
-        swings: list[SwingPoint] = []
-        for point in raw:
-            if swings and swings[-1].kind == point.kind:
-                more_extreme = (
-                    point.kind is SwingKind.HIGH and point.price > swings[-1].price
-                ) or (point.kind is SwingKind.LOW and point.price < swings[-1].price)
-                if more_extreme:
-                    swings[-1] = point
-            else:
-                swings.append(point)
-        return swings
-
     def _structure_events(
         self, bars: list[OHLCBar]
     ) -> tuple[list[StructureEvent], Bias]:
-        swings = self._find_swings(bars)
+        swings = find_swings(bars, self.swing_strength)
         swing_by_index: dict[int, list[SwingPoint]] = {}
         for sp in swings:
             swing_by_index.setdefault(sp.index, []).append(sp)
