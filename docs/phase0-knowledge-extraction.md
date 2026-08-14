@@ -1,7 +1,10 @@
 # Phase 0 — Knowledge Extraction & Module Inventory
 
-**Status: draft for review. No engine code should be written until the open
-judgment calls in §7 are resolved.**
+**Status: complete. Judgment calls resolved 2026-08-15 (see §7) — project
+owner reviewed the corpus findings and delegated the specific choices to
+Claude Code's judgment. Every decision below is an editorial synthesis
+choice, not a rule the source material itself states, and is documented as
+such so it stays overridable.**
 
 This document is the Layer 0 deliverable required by `architecture.md`: (1) a
 structured inventory of every distinct analytical component the source
@@ -259,55 +262,94 @@ downstream depends on resolving this precisely.
 
 ---
 
-## 7. Open judgment calls — decisions needed before Phase 1
+## 7. Judgment calls — resolved 2026-08-15
 
-Per the project's ground rules, none of these should be filled in with an
-invented default. Flagging them here for a decision:
+Per the project's ground rules, none of these are stated by the source
+material as a whole — each is an explicit editorial decision, made by
+Claude Code after the project owner reviewed the corpus findings above and
+delegated the specific choice. Every rule-check function built against one
+of these should cite this section (not a source document) as its authority,
+per `rule-mapping.md`.
 
-1. **Combination logic (§4).** Adopt the Yanu Emmanuel F. hard-gate/cascade
-   model as the default (single best-specified source), build a
-   configurable soft-scoring alternative, or expose gate strictness as a
-   tunable parameter so both can be backtested against each other? Given
-   Layer 7 is explicitly supposed to measure whether components help or
-   hurt, a configurable approach may be more useful than committing to one
-   model now.
-2. **QM/QML/QMR/QMM/QMC canonical definition (§2.3).** Four incompatible
-   readings exist. Needs one chosen definition (or a decision to skip this
-   component family entirely for v1, given how unresolved it is).
-3. **MSS vs. CHoCH relationship (§2.1).** Synonyms, or two distinct signals?
-4. **Stop-loss placement rule (§3).** No corpus-wide formula exists.
-   Candidates found in the material: beyond the swept liquidity zone
-   (doc 08/11, implicit), nearest OB/liquidity zone (doc 02, explicit), or a
-   fixed structural buffer. This needs to be designed, not extracted.
-5. **Take-profit rule (§3).** Candidates: opposing liquidity pool/DOL (most
-   common), fixed RR floor (1:1.5 per docs 01/10), or Fibonacci-deviation
-   projection (doc 02's CRT model). Also needs to be designed.
-6. **Risk management / position sizing.** Virtually absent from the source
-   material; doc 22's 5–12%-per-trade figure is an outlier that should not
-   be adopted as-is. This will need to come from outside the corpus
-   entirely (standard risk-management practice), which itself is worth
-   naming explicitly rather than pretending it's sourced.
-7. **Session/timezone convention (§2.4).** GMT+7 vs. NY/UTC-4 tables
-   conflict and are never reconciled by any document — pick one.
-8. **MSNR canonical gloss (§5).** Confirm or override the "Malaysian
-   Support and Resistance" recommendation.
-9. **Trendline-touch entry rule (§2.4).** Doc 06/16/20's "touch #3 only"
-   rule vs. doc 04/05's differently-numbered rule set with a 45–60° angle
-   constraint — these come from different, unrelated sources and disagree;
-   pick one or keep both as configurable trendline-strategy variants.
+1. **Combination logic (§4) — configurable, hard-gate cascade as default
+   preset.** Layer 3 (aggregation) is built with gate strictness as a
+   tunable parameter rather than one hard-coded rule. The default preset
+   mirrors Yanu Emmanuel F.'s model (docs 06/16/20 + 22) — bias confirmed →
+   rejection/engulfing confirmed → structure confirmed → execution, each
+   stage a prerequisite for the next — since it's the only fully
+   self-consistent combination rule in the entire corpus. A soft
+   weighted-scoring preset is also implemented so Layer 7 can backtest both
+   and measure which one actually performs better, per Layer 7's own stated
+   purpose.
+2. **QM/QML/QMR/QMM/QMC (§2.3) — doc 10's taxonomy adopted.** QM = the
+   reversal pattern (structural sequence), QML = the specific price level
+   the pattern marks, QMR/QMM/QMC = reversal/manipulation/continuation
+   sub-variants. Chosen over docs 01/06/09's competing readings because it's
+   the most complete attempt at internal disambiguation in the corpus, even
+   though doc 10 itself doesn't fully resolve every edge case.
+3. **MSS vs. CHoCH (§2.1) — treated as synonyms.** Both refer to the
+   reversal/change-of-character signal. Validity test adopted from doc 20 —
+   the level must be broken by a full-body candle close, not a wick alone —
+   since doc 20 is the only document precise enough to be directly
+   implementable. BOS remains a separate, distinct continuation signal.
+4. **Trendline-touch entry rule (§2.4) — both rules implemented as
+   configurable variants.** Doc 06/16/20's rule (enter only on the 3rd
+   touch, with wick rejection, explicitly never on touch #2) and doc 04/05's
+   rule (engulfing candles required at touches #1–#2, 2nd touch must break
+   prior structure, 3rd touch requires HTF POI alignment, plus a 45–60°
+   trendline-angle constraint) come from unrelated, non-corroborating
+   sources — rather than picking one, both are built as named strategy
+   variants so Layer 7 can compare them empirically instead of the choice
+   being made blind.
+5. **Stop-loss placement (§3) — structural invalidation point, not a fixed
+   distance.** No corpus-wide formula exists; doc 02's rule ("place stop
+   loss at the nearest OB or liquidity zone") is adopted as the concrete
+   default, generalized as: the stop sits just beyond — never inside — the
+   structural zone that gated entry (nearest OB/liquidity zone/swept-zone
+   extreme, depending on which module triggered the signal), consistent
+   with doc 08/11's implicit "SL IN SWPT = HIGH RISK" warning against
+   placing a stop inside an already-swept zone. This slots directly into
+   Layer 6 as already designed — the confirmation/aggregation logic already
+   has to define an invalidation point, so SL placement is that point, not
+   a separately invented rule.
+6. **Take-profit (§3) — opposing liquidity pool, 1:1.5 minimum RR floor.**
+   Primary target = the opposing liquidity pool/DOL, the most common idea
+   across the corpus. Minimum RR floor of 1:1.5 adopted because it's the
+   one quantified figure two independent sources (docs 01 and 10) actually
+   agree on. Doc 22's 5–12%-risk / 1:3–1:7 model is explicitly **rejected**
+   as an outlier not grounded in any risk model — not adopted, not even as
+   a secondary preset, without further review.
+7. **Risk management / position sizing — sourced outside the corpus,
+   explicitly labeled as such.** The source material gives essentially
+   nothing usable here. Default: 0.5–1% account risk per trade, standard
+   conservative practice, not attributed to any Alchemist document anywhere
+   in code or docs.
+8. **Session/timezone convention (§2.4) — UTC internally, standard session
+   windows.** All timestamps and session logic are stored/computed in UTC.
+   Asia/London/NY session windows use standard real-world hours rather than
+   either of the corpus's two conflicting Quarterly Theory tables (GMT+7 vs.
+   NY/UTC-4) — those specific tables only matter if a dedicated Quarterly
+   Theory module gets built later, at which point this decision should be
+   revisited specifically for that module.
+9. **MSNR canonical gloss (§5) — "Malaysian Support and Resistance."**
+   Adopted as the documented working definition (the plurality reading once
+   duplicate sources are collapsed). "MSNR" remains an opaque module/brand
+   name in code regardless — nothing downstream depends on this gloss being
+   precisely correct.
 
 ---
 
-## 8. Suggested next step
+## 8. Next step
 
-Once §7 is resolved, Phase 1 (data ingestion) can begin — it doesn't depend
-on these decisions. Phase 2 (first module) does, so the recommendation is to
-resolve items 2, 3, and 9 first (they gate which modules get built at all),
-and treat items 1, 4, 5 as configurable/tunable rather than hard-coded,
-given Layer 7's own stated purpose is to find out empirically which
-approach actually works.
+Phase 0 is complete. Per the project's GitHub practice, this branch merges
+to `main` and gets tagged `v0.0` as the Phase 0 checkpoint. Phase 1 (data
+ingestion) starts next: base OHLC feeds for forex and crypto, per
+`architecture.md` Layer 1 — nothing in the extracted material calls for
+COT/economic-calendar/sentiment feeds as a hard requirement, so those stay
+out of scope unless a specific module built later needs one.
 
 A `docs/rule-mapping.md` template has been created alongside this document
 — every module built from Phase 2 onward should get an entry there citing
-exactly which document/section it implements, per the project's
-document-as-ground-truth convention.
+either a source document/section, or this document's §7 where the rule is
+an editorial decision rather than something the material states, per the
+project's document-as-ground-truth convention.
