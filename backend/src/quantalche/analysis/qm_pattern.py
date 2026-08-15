@@ -191,6 +191,7 @@ class QMModule(AnalysisModule):
                     confidence=0.65,
                     reason=reason,
                     bar_time=last.open_time,
+                    level=level,
                 )
 
         return ModuleSignal(
