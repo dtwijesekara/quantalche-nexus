@@ -22,12 +22,28 @@ https://twelvedata.com/). Binance's public market-data endpoints need no key.
 | Layer | Package | What it is |
 |---|---|---|
 | 1 — Data ingestion | `quantalche.ingestion` | Binance (crypto) + Twelve Data (forex) OHLC clients |
-| 2 — Analysis modules | `quantalche.analysis` | 5 independent modules: `snr_zone`, `market_structure`, `liquidity_sweep`, `trendline_confluence`, `qm_pattern` |
-| 3 — Aggregation | `quantalche.aggregation` | Combines module signals — `hard_gate` (default) or `soft_score` mode |
+| 2 — Analysis modules | `quantalche.analysis` | 9 independent modules (see below) |
+| 3 — Aggregation | `quantalche.aggregation` | Combines module signals — `hard_gate` (default, live) or `soft_score` mode (backtest comparison only) |
 | 5/6 — Confirmation + lifecycle | `quantalche.execution` | Entry/SL/TP calculation, `IDLE → PENDING → SIGNAL_ACTIVE → STOPPED_OUT \| TP_HIT \| EXPIRED → IDLE` state machine |
 | 7 — Backtesting | `quantalche.backtest` | Bar-by-bar replay, walk-forward segmentation, per-module accuracy reporting |
 | 8 — API | `quantalche.api` | FastAPI: REST (`/bars`, `/signals`) + WebSocket (`/ws/signals`) |
 | 9 — Alerting | `quantalche.alerting` | Fires on signal state transitions (new/filled/TP/SL/expired) via webhook, Discord, and/or Telegram |
+
+### Layer 2 modules
+
+| Module | In `default_pipeline()`? | What it reads |
+|---|---|---|
+| `snr_zone` | Yes | Body-close open/close gap zones + Classic V/A rejection shapes |
+| `market_structure` | Yes | BOS (continuation) / CHoCH (reversal) swing breaks |
+| `liquidity_sweep` | Yes | BSL/SSL wick-through-then-close-back sweeps, incl. EQH/EQL clustering |
+| `trendline_confluence` | Yes | 3rd-touch trendline rejection |
+| `qm_pattern` | Yes | Quasimodo (QM/QML) 4-point reversal structure |
+| `crt_pattern` | Yes | 3-candle Candle Range Theory / Power-of-3 (accumulation → manipulation → distribution) |
+| `quarterly_theory` | No — opt-in | Session/True-Open bias (always non-neutral; see below for why it's excluded by default) |
+| `premium_discount` | No — opt-in | Dealing-range Premium/Discount bias (same always-on exclusion reason) |
+| `smt_divergence` | No — opt-in, separate interface | Inter-market divergence (e.g. BTC/ETH); needs two instruments' bars at once, wired in via `pipeline.run_with_correlated()` rather than `AnalysisModule` |
+
+`quarterly_theory` and `premium_discount` are built, live-validated, and available, but excluded from the default pipeline for an empirically-confirmed reason: both are *always* non-neutral (price is always on one side of a reference level), and under `HARD_GATE`'s unanimity rule an always-on module becomes a near-permanent filter rather than an occasional vote — live backtests showed it collapsing signal count toward zero. See `docs/rule-mapping.md` and `aggregation/pipeline.py`'s `default_pipeline` docstring for the numbers and the reasoning.
 
 ## Running the API
 
@@ -75,9 +91,14 @@ automated test suite:
 | `scripts/validate_liquidity_sweep.py` | Liquidity/Sweep module |
 | `scripts/validate_trendline_confluence.py` | Trendline Confluence module (both variants) |
 | `scripts/validate_qm_pattern.py` | QM (Quasimodo) pattern module |
+| `scripts/validate_crt_pattern.py` | CRT/PO3 pattern module |
+| `scripts/validate_quarterly_theory.py` | Quarterly Theory session/True-Open module |
+| `scripts/validate_smt_divergence.py` | SMT inter-market divergence module |
+| `scripts/validate_premium_discount.py` | Premium/Discount module, incl. the HARD_GATE signal-frequency comparison that justified excluding it from `default_pipeline` |
 | `scripts/run_pipeline.py` | Phase 4 — full aggregation, single snapshot + history replay |
 | `scripts/run_signal_lifecycle.py` | Phase 5 — confirmation + state machine, full lifecycle replay |
 | `scripts/run_backtest.py` | Phase 6 — backtest/walk-forward report + leakage spot-check |
+| `scripts/full_backtest_report.py` | Full report across every dashboard instrument, both modes, walk-forward segmented — writes `full_backtest_report.json` |
 
 ## Non-repainting
 
