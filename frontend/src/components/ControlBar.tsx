@@ -57,17 +57,21 @@ export function ControlBar({
         </optgroup>
       </select>
 
-      <select
-        className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-        value={timeframe}
-        onChange={(e) => onTimeframeChange(e.target.value as Timeframe)}
-      >
+      <div className="flex rounded-md border border-slate-700 bg-slate-900 p-0.5 text-sm">
         {TIMEFRAMES.map((tf) => (
-          <option key={tf} value={tf}>
-            {tf}
-          </option>
+          <button
+            key={tf}
+            onClick={() => onTimeframeChange(tf)}
+            className={`rounded px-2.5 py-1 transition-colors ${
+              timeframe === tf
+                ? "bg-cyan-600 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {tf.toUpperCase()}
+          </button>
         ))}
-      </select>
+      </div>
 
       <div className="flex rounded-md border border-slate-700 bg-slate-900 p-0.5 text-sm">
         {(["hard_gate", "soft_score"] as AggregationMode[]).map((m) => (
