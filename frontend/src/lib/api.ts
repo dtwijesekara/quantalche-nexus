@@ -33,9 +33,16 @@ export function fetchBars(
   source: Source,
   symbol: string,
   timeframe: Timeframe,
-  limit = 300
+  limit = 300,
+  includeForming = false
 ): Promise<OHLCBar[]> {
-  return getJson<OHLCBar[]>("/bars", { source, symbol, timeframe, limit });
+  return getJson<OHLCBar[]>("/bars", {
+    source,
+    symbol,
+    timeframe,
+    limit,
+    include_forming: includeForming ? "true" : "false",
+  });
 }
 
 export function fetchSignal(

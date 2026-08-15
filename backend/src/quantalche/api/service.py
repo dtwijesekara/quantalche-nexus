@@ -8,10 +8,21 @@ from ..ingestion.base import OHLCClient
 from ..ingestion.binance_client import BinanceClient
 from ..ingestion.models import OHLCBar, Timeframe
 from ..ingestion.twelvedata_client import TwelveDataClient
+from .cache import TTLCache
 from .schemas import SignalResponse
 from .state import signal_registry
 
 MIN_BARS_REQUIRED = 60
+
+# 20s TTL: protects Twelve Data's free-tier rate limit against bursts of
+# near-simultaneous requests for the same (source, symbol, timeframe) --
+# multiple browser tabs, the chart's poll and the signals WebSocket's poll
+# landing close together. Deliberately shorter than the forming-bar chart
+# poll interval (frontend, ~20s) so a single client's own sequential polls
+# mostly still reach the upstream API for fresh data; it's bursts from
+# multiple concurrent sources this protects against, not a single client's
+# steady cadence. NOT source-stated -- pure infrastructure.
+_bars_cache: TTLCache[list[OHLCBar]] = TTLCache(ttl_seconds=20.0)
 
 
 class SignalServiceError(Exception):
@@ -42,7 +53,11 @@ def _make_client(source: str) -> OHLCClient:
 
 
 def fetch_bars(
-    source: str, symbol: str, timeframe: Timeframe, limit: int
+    source: str,
+    symbol: str,
+    timeframe: Timeframe,
+    limit: int,
+    include_forming: bool = False,
 ) -> list[OHLCBar]:
     """Fetch bars from the upstream data source, converting upstream
     failures (rate limits, timeouts, bad symbols) into a clean
@@ -55,10 +70,28 @@ def fetch_bars(
     policy" error -- hiding the real cause (e.g. a Twelve Data free-tier
     rate limit) behind a misleading one. Found via live browser testing,
     not a unit test -- see rule-mapping.md.
+
+    Results are cached (``_bars_cache``, 20s TTL) -- the single biggest
+    protection against exhausting Twelve Data's free-tier rate limit,
+    since it absorbs bursts of near-simultaneous requests for the same
+    (source, symbol, timeframe, include_forming) regardless of how many
+    callers are asking.
+
+    ``include_forming=True`` must ONLY ever be used for chart display
+    (api/routes.py's /bars endpoint) -- build_signal_response() below,
+    which feeds the signal pipeline, always calls this with the default
+    False and must never be changed to do otherwise.
     """
+    cache_key = (source, symbol, timeframe.value, limit, include_forming)
+    cached = _bars_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     client = _make_client(source)
     try:
-        return client.get_ohlc(symbol, timeframe, limit=limit)
+        bars = client.get_ohlc(
+            symbol, timeframe, limit=limit, include_forming=include_forming
+        )
     except SignalServiceError:
         raise
     except httpx.TimeoutException as exc:
@@ -79,6 +112,9 @@ def fetch_bars(
         ) from exc
     finally:
         client.close()
+
+    _bars_cache.set(cache_key, bars)
+    return bars
 
 
 def build_signal_response(
