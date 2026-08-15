@@ -5,6 +5,7 @@ from ..analysis.crt_pattern import CRTModule
 from ..analysis.liquidity_sweep import LiquiditySweepModule
 from ..analysis.market_structure import MarketStructureModule
 from ..analysis.qm_pattern import QMModule
+from ..analysis.smt_divergence import SMTModule
 from ..analysis.snr_zone import SNRZoneModule
 from ..analysis.trendline_confluence import TrendlineConfluenceModule
 from ..ingestion.models import OHLCBar
@@ -26,6 +27,28 @@ class SignalPipeline:
     def run(self, bars: list[OHLCBar]) -> AggregatedSignal:
         signals = [module.evaluate(bars) for module in self.modules]
         return self.aggregator.combine(signals)
+
+
+def run_with_correlated(
+    pipeline: SignalPipeline,
+    bars: list[OHLCBar],
+    smt_module: SMTModule,
+    correlated_bars: list[OHLCBar],
+    correlated_symbol: str,
+) -> AggregatedSignal:
+    """Runs the standard single-symbol pipeline, then adds SMTModule's
+    signal (which needs a second instrument's bars -- see smt_divergence.py
+    for why it isn't a plain AnalysisModule) before aggregating.
+
+    Deliberately a separate function rather than a SignalPipeline
+    constructor option: SignalPipeline.run(bars) stays a clean,
+    single-symbol, already-validated interface; this is an explicit,
+    opt-in extension point for the one component that structurally can't
+    fit that interface, not a change to it.
+    """
+    signals = [module.evaluate(bars) for module in pipeline.modules]
+    signals.append(smt_module.evaluate(bars, correlated_bars, correlated_symbol))
+    return pipeline.aggregator.combine(signals)
 
 
 def default_pipeline(mode: AggregationMode = AggregationMode.HARD_GATE) -> SignalPipeline:
