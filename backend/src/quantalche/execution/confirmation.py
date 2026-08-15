@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from ..aggregation.models import AggregatedBias, AggregatedSignal
+from ..analysis.liquidity_sweep import LiquidityLevelType, LiquiditySweepModule
 from ..analysis.models import Bias
+from ..analysis.snr_zone import SNRZoneModule, ZoneType
 from ..analysis.swings import SwingKind, find_swings
 from ..ingestion.models import OHLCBar
 from .models import ConfirmationResult, RejectionReason, TradeDirection, TradeSignal
@@ -21,21 +23,33 @@ class ConfirmationLayer:
 
       - Stop-loss: doc 02's rule ("place stop loss at the nearest OB or
         liquidity zone") is the only fully explicit, generalizable SL rule
-        found anywhere in the corpus. Implemented here as the nearest
-        swing point (swings.py) structurally opposing the trade direction,
-        plus a small buffer.
+        found anywhere in the corpus. Implemented as the nearest edge of
+        an opposing SNR zone (snr_zone.py -- the corpus's own "MSNR"
+        module: gap zones + Classic V/A) or swing point (swings.py,
+        fallback when no zone exists nearby), plus a small buffer.
       - Take-profit: "target = opposite liquidity" is the single
         most-repeated TP idea across the corpus (docs 08/11, 13, and
-        implied elsewhere). Implemented as the nearest swing high (for
-        longs) / swing low (for shorts) beyond entry -- exactly where
-        liquidity_sweep.py's own BSL/SSL definition says that liquidity
-        rests, reusing the same concept without re-deriving it.
+        implied elsewhere). Implemented as the nearest opposing BSL/SSL
+        liquidity level (liquidity_sweep.py) or swing point (fallback),
+        beyond entry.
       - Minimum 1:1.5 reward:risk is the only quantified TP floor found
         anywhere in the corpus (docs 01, 10). Enforced here as a hard
-        confirmation gate, not a suggestion: if the nearest opposing swing
-        doesn't clear it, the next one out is tried; if none does, the
-        signal is rejected as unconfirmed rather than force-fit into a
-        trade.
+        confirmation gate, not a suggestion: if the nearest opposing
+        candidate doesn't clear it, the next one out is tried; if none
+        does, the signal is rejected as unconfirmed rather than force-fit
+        into a trade.
+
+    SL/TP candidates are pooled from THREE sources -- SNR zones, liquidity
+    levels, and raw swing points -- rather than swing points alone (the
+    original Phase 5 version). This directly reuses the already-validated
+    snr_zone.py and liquidity_sweep.py modules' own detection instead of
+    re-deriving a disconnected approximation in this layer, which is what
+    "aligned to Alchemist MSNR" concretely means here: MSNR *is* the SNR
+    Zone module in this corpus's own vocabulary (Phase0 §5), so the stop
+    should be able to land on an actual MSNR zone edge, not just a generic
+    swing high/low that happens to be nearby. Raw swings stay in the pool
+    as a fallback so confirmation doesn't get *more* restrictive than
+    before on bars where no zone/liquidity level exists close enough.
 
     Entry is the average of the price level(s) the *agreeing* modules
     actually anchored their signal to (ModuleSignal.level), not the
@@ -57,6 +71,8 @@ class ConfirmationLayer:
         self.min_risk_reward = min_risk_reward
         self.sl_buffer_ratio = sl_buffer_ratio
         self.swing_strength = swing_strength
+        self._zone_module = SNRZoneModule()
+        self._liquidity_module = LiquiditySweepModule()
 
     def confirm(
         self, aggregated: AggregatedSignal, bars: list[OHLCBar]
@@ -92,26 +108,28 @@ class ConfirmationLayer:
         entry = sum(levels) / len(levels) if levels else bars[-1].close
 
         swings = find_swings(bars, self.swing_strength)
+        zones = self._zone_module.detect_zones(bars)
+        levels, _ = self._liquidity_module.detect_levels_and_sweeps(bars)
         avg_range = sum(b.high - b.low for b in bars) / len(bars)
         buffer = avg_range * self.sl_buffer_ratio
 
-        stop = self._nearest_stop(swings, entry, direction, buffer)
+        stop = self._nearest_stop(swings, zones, entry, direction, buffer)
         if stop is None:
             return ConfirmationResult(
                 confirmed=False,
                 rejection_reason=RejectionReason.NO_STOP_REFERENCE,
-                detail="No swing point found to anchor a stop loss.",
+                detail="No SNR zone or swing point found to anchor a stop loss.",
             )
 
         risk = abs(entry - stop)
-        target = self._nearest_target(swings, entry, direction, risk)
+        target = self._nearest_target(swings, levels, entry, direction, risk)
         if target is None:
             return ConfirmationResult(
                 confirmed=False,
                 rejection_reason=RejectionReason.INSUFFICIENT_RR,
                 detail=(
-                    f"No swing level in the trade direction clears the "
-                    f"{self.min_risk_reward} minimum reward:risk."
+                    f"No liquidity level or swing in the trade direction clears "
+                    f"the {self.min_risk_reward} minimum reward:risk."
                 ),
             )
 
@@ -133,26 +151,49 @@ class ConfirmationLayer:
         return ConfirmationResult(confirmed=True, trade_signal=trade, detail=trade.reason)
 
     def _nearest_stop(
-        self, swings, entry: float, direction: TradeDirection, buffer: float
+        self, swings, zones, entry: float, direction: TradeDirection, buffer: float
     ) -> float | None:
         if direction is TradeDirection.LONG:
-            lows = [s.price for s in swings if s.kind is SwingKind.LOW and s.price < entry]
-            return (max(lows) - buffer) if lows else None
-        highs = [s.price for s in swings if s.kind is SwingKind.HIGH and s.price > entry]
-        return (min(highs) + buffer) if highs else None
+            candidates = [
+                s.price for s in swings if s.kind is SwingKind.LOW and s.price < entry
+            ]
+            candidates += [
+                z.bottom
+                for z in zones
+                if z.zone_type is ZoneType.SUPPORT and z.bottom < entry
+            ]
+            return (max(candidates) - buffer) if candidates else None
+
+        candidates = [
+            s.price for s in swings if s.kind is SwingKind.HIGH and s.price > entry
+        ]
+        candidates += [
+            z.top for z in zones if z.zone_type is ZoneType.RESISTANCE and z.top > entry
+        ]
+        return (min(candidates) + buffer) if candidates else None
 
     def _nearest_target(
-        self, swings, entry: float, direction: TradeDirection, risk: float
+        self, swings, levels, entry: float, direction: TradeDirection, risk: float
     ) -> float | None:
         if risk <= 0:
             return None
         if direction is TradeDirection.LONG:
             candidates = sorted(
-                s.price for s in swings if s.kind is SwingKind.HIGH and s.price > entry
+                {s.price for s in swings if s.kind is SwingKind.HIGH and s.price > entry}
+                | {
+                    lvl.price
+                    for lvl in levels
+                    if lvl.level_type is LiquidityLevelType.BSL and lvl.price > entry
+                }
             )
         else:
             candidates = sorted(
-                (s.price for s in swings if s.kind is SwingKind.LOW and s.price < entry),
+                {s.price for s in swings if s.kind is SwingKind.LOW and s.price < entry}
+                | {
+                    lvl.price
+                    for lvl in levels
+                    if lvl.level_type is LiquidityLevelType.SSL and lvl.price < entry
+                },
                 reverse=True,
             )
         for level in candidates:

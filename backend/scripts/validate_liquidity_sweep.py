@@ -16,7 +16,7 @@ from quantalche.ingestion.twelvedata_client import TwelveDataClient
 
 def _run(label: str, bars: list[OHLCBar]) -> None:
     module = LiquiditySweepModule()
-    levels, sweeps = module._levels_and_sweeps(bars)  # noqa: SLF001 -- validation script
+    levels, sweeps = module.detect_levels_and_sweeps(bars)
 
     print(
         f"\n--- {label}: {len(bars)} bars, {len(levels)} levels, "

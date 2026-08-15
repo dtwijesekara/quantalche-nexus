@@ -17,7 +17,7 @@ from quantalche.ingestion.twelvedata_client import TwelveDataClient
 
 def _run(label: str, bars: list[OHLCBar]) -> None:
     module = SNRZoneModule()
-    zones = module._detect_zones(bars)  # noqa: SLF001 -- validation script, intentional
+    zones = module.detect_zones(bars)
 
     gap_count = sum(1 for z in zones if z.source.value == "gap")
     classic_count = len(zones) - gap_count
