@@ -1,9 +1,9 @@
 # Quantalche Nexus — Backend
 
-Phase 1: OHLC data ingestion for forex (Twelve Data) and crypto (Binance).
-See `../docs/architecture.md` (Layer 1) and
-`../docs/phase0-knowledge-extraction.md` for why these two feeds and no
-others.
+The signal engine described in `../docs/architecture.md`. Every rule this
+code implements cites its source document/section in
+`../docs/rule-mapping.md` — that file is the ground-truth cross-reference,
+this README is just setup/usage.
 
 ## Setup
 
@@ -17,21 +17,59 @@ pip install -e .
 Copy `.env.example` to `.env` and add your Twelve Data API key (free tier:
 https://twelvedata.com/). Binance's public market-data endpoints need no key.
 
-## Manual validation
+## Layers implemented so far
+
+| Layer | Package | What it is |
+|---|---|---|
+| 1 — Data ingestion | `quantalche.ingestion` | Binance (crypto) + Twelve Data (forex) OHLC clients |
+| 2 — Analysis modules | `quantalche.analysis` | 5 independent modules: `snr_zone`, `market_structure`, `liquidity_sweep`, `trendline_confluence`, `qm_pattern` |
+| 3 — Aggregation | `quantalche.aggregation` | Combines module signals — `hard_gate` (default) or `soft_score` mode |
+| 5/6 — Confirmation + lifecycle | `quantalche.execution` | Entry/SL/TP calculation, `IDLE → PENDING → SIGNAL_ACTIVE → STOPPED_OUT \| TP_HIT \| EXPIRED → IDLE` state machine |
+| 7 — Backtesting | `quantalche.backtest` | Bar-by-bar replay, walk-forward segmentation, per-module accuracy reporting |
+| 8 — API | `quantalche.api` | FastAPI: REST (`/signals`) + WebSocket (`/ws/signals`) |
+
+## Running the API
 
 ```
-python scripts/fetch_sample.py
+python -m uvicorn quantalche.api.app:app --reload --port 8000
 ```
 
-Prints the last 5 closed bars from each configured source — compare by eye
-against a real chart (e.g. TradingView) per the Phase 1 validation step in
-`docs/architecture.md`. This is intentionally a manual spot-check script,
-not an automated test suite — that's what the architecture doc calls for at
-this phase.
+Then, e.g.:
+
+```
+curl "http://127.0.0.1:8000/signals?source=binance&symbol=BTCUSDT&timeframe=1h"
+curl "http://127.0.0.1:8000/signals?source=twelvedata&symbol=EUR/USD&timeframe=1h&mode=soft_score"
+```
+
+Interactive docs at `http://127.0.0.1:8000/docs`. WebSocket:
+`ws://127.0.0.1:8000/ws/signals?source=binance&symbol=BTCUSDT&timeframe=1h`.
+
+State is held server-side per `(source, symbol, timeframe)` for the life of
+the process — see `quantalche/api/state.py` for why this can't be
+per-request (architecture.md Layer 6's "one signal per symbol+timeframe").
+
+## Manual validation scripts
+
+Each of these is the validation step called for by the relevant phase in
+`docs/architecture.md` — a manual spot-check against real data, not an
+automated test suite:
+
+| Script | Validates |
+|---|---|
+| `scripts/fetch_sample.py` | Phase 1 — raw OHLC bars against a real chart |
+| `scripts/validate_snr_zone.py` | SNR Zone module |
+| `scripts/validate_market_structure.py` | Market Structure (BOS/CHoCH) module |
+| `scripts/validate_liquidity_sweep.py` | Liquidity/Sweep module |
+| `scripts/validate_trendline_confluence.py` | Trendline Confluence module (both variants) |
+| `scripts/validate_qm_pattern.py` | QM (Quasimodo) pattern module |
+| `scripts/run_pipeline.py` | Phase 4 — full aggregation, single snapshot + history replay |
+| `scripts/run_signal_lifecycle.py` | Phase 5 — confirmation + state machine, full lifecycle replay |
+| `scripts/run_backtest.py` | Phase 6 — backtest/walk-forward report + leakage spot-check |
 
 ## Non-repainting
 
-Both clients drop the current, still-forming bar before returning results —
-only fully closed bars are ever handed back, per `docs/architecture.md`
-ground rule #2. See the `close_time`/bar-duration checks in
-`binance_client.py` and `twelvedata_client.py`.
+Every data client drops the current, still-forming bar before returning
+results — only fully closed bars are ever handed back, per
+`docs/architecture.md` ground rule #2. Every module built on top of that
+data preserves the same guarantee (e.g. swing-point confirmation lags in
+`analysis/swings.py`).
