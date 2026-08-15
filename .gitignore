@@ -42,4 +42,5 @@ Thumbs.db
 
 # Backtest artifacts
 backtests/output/
+backend/full_backtest_report.json
 *.ipynb_checkpoints/
