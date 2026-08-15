@@ -200,6 +200,7 @@ class TrendlineConfluenceModule(AnalysisModule):
             confidence=confidence,
             reason=reason,
             bar_time=last.open_time,
+            level=expected,
         )
 
     def evaluate(self, bars: list[OHLCBar]) -> ModuleSignal:

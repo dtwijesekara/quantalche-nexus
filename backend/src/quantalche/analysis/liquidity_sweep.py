@@ -194,4 +194,5 @@ class LiquiditySweepModule(AnalysisModule):
             confidence=0.7,
             reason=reason,
             bar_time=last.open_time,
+            level=sweep.level_price,
         )

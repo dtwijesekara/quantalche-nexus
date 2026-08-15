@@ -195,12 +195,14 @@ class SNRZoneModule(AnalysisModule):
         bullish_body = last.close > last.open
         bearish_body = last.close < last.open
 
+        level: float | None = None
         if (
             zone.zone_type is ZoneType.SUPPORT
             and bullish_body
             and last.close >= zone.bottom
         ):
             bias = Bias.BULLISH
+            level = zone.bottom
             reason = (
                 f"Bullish rejection off a {zone.state.value} support zone "
                 f"[{zone.bottom:.5f}, {zone.top:.5f}]."
@@ -211,6 +213,7 @@ class SNRZoneModule(AnalysisModule):
             and last.close <= zone.top
         ):
             bias = Bias.BEARISH
+            level = zone.top
             reason = (
                 f"Bearish rejection off a {zone.state.value} resistance zone "
                 f"[{zone.bottom:.5f}, {zone.top:.5f}]."
@@ -232,4 +235,5 @@ class SNRZoneModule(AnalysisModule):
             confidence=confidence,
             reason=reason,
             bar_time=last.open_time,
+            level=level,
         )

@@ -24,3 +24,12 @@ class ModuleSignal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
     bar_time: datetime
+    level: float | None = None
+    """The specific price this signal is anchored to (a zone edge, a broken
+    swing level, a swept liquidity price, a QML, a trendline touch price),
+    when the module has one. None for a NEUTRAL signal, or when no single
+    price is meaningful. Layer 5 (confirmation/execution) uses this to
+    compute a real limit-order entry price instead of the current close --
+    architecture.md's Layer 6 calls for "entry as limit order," which needs
+    to be a price the modules actually reacted to.
+    """

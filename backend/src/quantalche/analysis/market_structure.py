@@ -174,4 +174,5 @@ class MarketStructureModule(AnalysisModule):
             confidence=confidence,
             reason=reason,
             bar_time=last.open_time,
+            level=last_event.broken_level if fresh else None,
         )
