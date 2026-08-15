@@ -12,11 +12,12 @@ material uses, and (2) the explicit rule the material gives for how those
 components combine into one decision — or, where no such rule exists, that
 gap flagged rather than filled in silently.
 
-Source corpus: 22 PDFs, each already converted into a structured
-"Extraction Notes" document (`C:\Users\DT Wijesekara\Desktop\Alchemist MD\`),
-covering core concepts, entry/SL/TP rules, MTF logic, and — usefully — each
-document's own self-flagged internal ambiguities. All 22 were read in full
-(2 directly, 20 via parallel research passes) to produce this synthesis.
+Source corpus: 22 PDFs (private, not included in this repo — proprietary
+third-party trading material), each already converted into a structured
+"Extraction Notes" document covering core concepts, entry/SL/TP rules, MTF
+logic, and — usefully — each document's own self-flagged internal
+ambiguities. All 22 were read in full (2 directly, 20 via parallel research
+passes) to produce this synthesis.
 
 ---
 
