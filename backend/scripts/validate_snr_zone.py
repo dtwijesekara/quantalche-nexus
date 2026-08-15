@@ -19,13 +19,18 @@ def _run(label: str, bars: list[OHLCBar]) -> None:
     module = SNRZoneModule()
     zones = module._detect_zones(bars)  # noqa: SLF001 -- validation script, intentional
 
-    print(f"\n--- {label}: {len(bars)} bars, {len(zones)} zones detected ---")
+    gap_count = sum(1 for z in zones if z.source.value == "gap")
+    classic_count = len(zones) - gap_count
+    print(
+        f"\n--- {label}: {len(bars)} bars, {len(zones)} zones detected "
+        f"({gap_count} gap, {classic_count} classic) ---"
+    )
     for zone in zones[-10:]:
         flips = sum(1 for e in zone.events if e.event.value == "flipped")
         print(
-            f"  {zone.zone_type.value:<10} [{zone.bottom:.5f}, {zone.top:.5f}] "
-            f"formed {zone.formed_at.isoformat()}  state={zone.state.value}  "
-            f"flips={flips}"
+            f"  [{zone.source.value:<7}] {zone.zone_type.value:<10} "
+            f"[{zone.bottom:.5f}, {zone.top:.5f}] formed {zone.formed_at.isoformat()}  "
+            f"state={zone.state.value}  flips={flips}"
         )
 
     signal = module.evaluate(bars)

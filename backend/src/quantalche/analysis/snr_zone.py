@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from ..ingestion.models import OHLCBar
 from .base import AnalysisModule
 from .models import Bias, ModuleSignal
+from .swings import SwingKind, find_swings
 
 
 class ZoneType(str, Enum):
@@ -18,6 +19,11 @@ class ZoneType(str, Enum):
 class ZoneState(str, Enum):
     FRESH = "fresh"
     UNFRESH = "unfresh"
+
+
+class ZoneSource(str, Enum):
+    GAP = "gap"
+    CLASSIC = "classic"
 
 
 class ZoneEventType(str, Enum):
@@ -32,12 +38,14 @@ class ZoneEvent(BaseModel):
 
 
 class SNRZone(BaseModel):
-    """An open/close ("gap") SNR zone with its fresh/unfresh/flip history.
+    """An SNR zone (either an open/close "gap" zone or a Classic V/A
+    swing-rejection zone) with its fresh/unfresh/flip history.
 
     See docs/rule-mapping.md for exact source citations.
     """
 
     zone_type: ZoneType
+    source: ZoneSource
     top: float
     bottom: float
     formed_at: datetime
@@ -59,12 +67,18 @@ class SNRZoneModule(AnalysisModule):
       - Flip (RBS/SBR): a bar's *close* breaks fully through the zone --
         the zone's role flips (support<->resistance) and resets to fresh in
         its new role (doc 20 S15; universal RBS/SBR mechanic).
-
-    Swing-high/low ("Classic V/A") zones are intentionally NOT implemented
-    here -- the source material never gives a swing-formation rule (see
-    Phase 0 S2.1 on doc 08's own note about this), so adding one would mean
-    inventing an un-sourced convention rather than extracting one. Flagged
-    as a candidate follow-up module, not silently folded into this one.
+      - Classic V/A: a fast wick-rejection at a swing extreme -- "V" at a
+        swing low (bullish), "A" at a swing high (bearish), per docs 04,
+        05, 06, 08/11, 13, 15's consistent description: "fast rejection
+        (bullish candle right after touch) -> buy bias" (doc 08 S7).
+        Formalized here as: the bar immediately after a confirmed swing
+        low/high closes back beyond the swing bar's own high/low with a
+        same-direction body -- a checkable proxy for "fast rejection"
+        that wasn't available when this module was first built (Phase 2,
+        before swings.py existed for market_structure.py). Represented as
+        a zero-width zone anchored at the swing price -- reuses the same
+        fresh/unfresh/flip lifecycle and touch logic as gap zones, no
+        separate code path needed.
 
     Minimum gap size (``min_gap_ratio``) is a second addition NOT stated by
     any of the 22 documents. Validating this module against live Binance
@@ -93,13 +107,11 @@ class SNRZoneModule(AnalysisModule):
 
     name = "snr_zone"
 
-    def __init__(self, min_gap_ratio: float = 0.08) -> None:
+    def __init__(self, min_gap_ratio: float = 0.08, swing_strength: int = 2) -> None:
         self.min_gap_ratio = min_gap_ratio
+        self.swing_strength = swing_strength
 
-    def _detect_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
-        if len(bars) < 2:
-            return []
-
+    def _detect_gap_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
         avg_range = sum(b.high - b.low for b in bars) / len(bars)
         min_gap = avg_range * self.min_gap_ratio
 
@@ -111,6 +123,7 @@ class SNRZoneModule(AnalysisModule):
                 zones.append(
                     SNRZone(
                         zone_type=ZoneType.SUPPORT,
+                        source=ZoneSource.GAP,
                         top=nxt.open,
                         bottom=prev.close,
                         formed_at=nxt.open_time,
@@ -120,11 +133,47 @@ class SNRZoneModule(AnalysisModule):
                 zones.append(
                     SNRZone(
                         zone_type=ZoneType.RESISTANCE,
+                        source=ZoneSource.GAP,
                         top=prev.close,
                         bottom=nxt.open,
                         formed_at=nxt.open_time,
                     )
                 )
+        return zones
+
+    def _detect_classic_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
+        swings = find_swings(bars, self.swing_strength)
+        zones: list[SNRZone] = []
+        for sp in swings:
+            next_idx = sp.index + 1
+            if next_idx >= len(bars):
+                continue
+            nxt = bars[next_idx]
+
+            if sp.kind is SwingKind.LOW:
+                fast_rejection = nxt.close > nxt.open and nxt.close > sp.price
+                zone_type = ZoneType.SUPPORT
+            else:
+                fast_rejection = nxt.close < nxt.open and nxt.close < sp.price
+                zone_type = ZoneType.RESISTANCE
+
+            if fast_rejection:
+                zones.append(
+                    SNRZone(
+                        zone_type=zone_type,
+                        source=ZoneSource.CLASSIC,
+                        top=sp.price,
+                        bottom=sp.price,
+                        formed_at=nxt.open_time,
+                    )
+                )
+        return zones
+
+    def _detect_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
+        if len(bars) < 2:
+            return []
+
+        zones = self._detect_gap_zones(bars) + self._detect_classic_zones(bars)
 
         for zone in zones:
             for bar in bars:
@@ -203,9 +252,10 @@ class SNRZoneModule(AnalysisModule):
         ):
             bias = Bias.BULLISH
             level = zone.bottom
+            zone_label = "Classic V" if zone.source is ZoneSource.CLASSIC else "gap"
             reason = (
-                f"Bullish rejection off a {zone.state.value} support zone "
-                f"[{zone.bottom:.5f}, {zone.top:.5f}]."
+                f"Bullish rejection off a {zone.state.value} {zone_label} support "
+                f"zone [{zone.bottom:.5f}, {zone.top:.5f}]."
             )
         elif (
             zone.zone_type is ZoneType.RESISTANCE
@@ -214,9 +264,10 @@ class SNRZoneModule(AnalysisModule):
         ):
             bias = Bias.BEARISH
             level = zone.top
+            zone_label = "Classic A" if zone.source is ZoneSource.CLASSIC else "gap"
             reason = (
-                f"Bearish rejection off a {zone.state.value} resistance zone "
-                f"[{zone.bottom:.5f}, {zone.top:.5f}]."
+                f"Bearish rejection off a {zone.state.value} {zone_label} "
+                f"resistance zone [{zone.bottom:.5f}, {zone.top:.5f}]."
             )
         else:
             bias = Bias.NEUTRAL
