@@ -37,11 +37,24 @@ export function ControlBar({
         value={instrumentIndex}
         onChange={(e) => onInstrumentChange(Number(e.target.value))}
       >
-        {INSTRUMENTS.map((inst, i) => (
-          <option key={`${inst.source}:${inst.symbol}`} value={i}>
-            {inst.label}
-          </option>
-        ))}
+        <optgroup label="Crypto">
+          {INSTRUMENTS.map((inst, i) =>
+            inst.source === "binance" ? (
+              <option key={`${inst.source}:${inst.symbol}`} value={i}>
+                {inst.label}
+              </option>
+            ) : null
+          )}
+        </optgroup>
+        <optgroup label="Forex">
+          {INSTRUMENTS.map((inst, i) =>
+            inst.source === "twelvedata" ? (
+              <option key={`${inst.source}:${inst.symbol}`} value={i}>
+                {inst.label}
+              </option>
+            ) : null
+          )}
+        </optgroup>
       </select>
 
       <select

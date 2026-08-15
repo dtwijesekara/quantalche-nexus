@@ -27,13 +27,21 @@ def get_bars(
     symbol: str = Query(..., min_length=1),
     timeframe: Timeframe = Query(Timeframe.H1),
     limit: int = Query(300, ge=1, le=1000),
+    include_forming: bool = Query(
+        False,
+        description=(
+            "Include the still-forming current bar -- display only. "
+            "Used by the chart for a live-updating last candle; never by "
+            "/signals or anything feeding the signal pipeline."
+        ),
+    ),
 ) -> list[OHLCBar]:
-    """Raw closed OHLC bars -- what the frontend's price chart renders.
+    """Raw OHLC bars -- what the frontend's price chart renders.
     Separate from /signals since a chart needs the underlying series, not
     just the derived signal.
     """
     try:
-        return fetch_bars(source, symbol, timeframe, limit)
+        return fetch_bars(source, symbol, timeframe, limit, include_forming)
     except SignalServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

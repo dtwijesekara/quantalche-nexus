@@ -54,6 +54,7 @@ class TwelveDataClient(OHLCClient):
         timeframe: Timeframe,
         limit: int = 500,
         end_time: datetime | None = None,
+        include_forming: bool = False,
     ) -> list[OHLCBar]:
         interval = _INTERVAL_MAP.get(timeframe)
         if interval is None:
@@ -88,8 +89,10 @@ class TwelveDataClient(OHLCClient):
             except ValueError:
                 open_time = datetime.strptime(row["datetime"], "%Y-%m-%d")
             open_time = open_time.replace(tzinfo=timezone.utc)
-            if open_time + duration > now:
-                # Still-forming bar -- exclude per the non-repainting rule.
+            if not include_forming and open_time + duration > now:
+                # Still-forming bar -- exclude per the non-repainting rule
+                # unless the caller explicitly opted into it (chart display
+                # only -- never the signal pipeline, see base.py).
                 continue
             bars.append(
                 OHLCBar(

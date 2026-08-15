@@ -32,6 +32,7 @@ class BinanceClient(OHLCClient):
         timeframe: Timeframe,
         limit: int = 500,
         end_time: datetime | None = None,
+        include_forming: bool = False,
     ) -> list[OHLCBar]:
         if timeframe.value not in _SUPPORTED:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
@@ -52,8 +53,10 @@ class BinanceClient(OHLCClient):
         bars: list[OHLCBar] = []
         for row in raw:
             open_time_ms, open_, high, low, close, volume, close_time_ms = row[:7]
-            if close_time_ms >= now_ms:
-                # Still-forming bar -- exclude per the non-repainting rule.
+            if not include_forming and close_time_ms >= now_ms:
+                # Still-forming bar -- exclude per the non-repainting rule
+                # unless the caller explicitly opted into it (chart display
+                # only -- never the signal pipeline, see base.py).
                 continue
             bars.append(
                 OHLCBar(

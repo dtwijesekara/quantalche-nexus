@@ -12,13 +12,19 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { OHLCBar, TradeSignal } from "@/lib/types";
+import type { LiveCandle } from "@/lib/useBinanceLiveKline";
 
 interface PriceChartProps {
   bars: OHLCBar[];
   trade: TradeSignal | null;
+  /** Live-ticking current candle (crypto only, via Binance's WebSocket
+   * stream -- see useBinanceLiveKline). Null/undefined for forex, where
+   * "live" instead comes from bars itself being refetched with
+   * include_forming=true on an interval (see page.tsx). */
+  liveCandle?: LiveCandle | null;
 }
 
-export function PriceChart({ bars, trade }: PriceChartProps) {
+export function PriceChart({ bars, trade, liveCandle }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -88,6 +94,22 @@ export function PriceChart({ bars, trade }: PriceChartProps) {
     );
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !liveCandle) return;
+    // Live-updates the currently-forming candle in place (or appends it as
+    // a new one once its timestamp moves past the last closed bar) --
+    // lightweight-charts' update() is built for exactly this, no need to
+    // re-run setData() on every tick.
+    series.update({
+      time: liveCandle.time as UTCTimestamp,
+      open: liveCandle.open,
+      high: liveCandle.high,
+      low: liveCandle.low,
+      close: liveCandle.close,
+    });
+  }, [liveCandle]);
 
   useEffect(() => {
     const series = seriesRef.current;

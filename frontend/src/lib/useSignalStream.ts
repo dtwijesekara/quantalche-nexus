@@ -16,8 +16,6 @@ export function useSignalStream(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSignal(null);
-    setError(null);
     let cancelled = false;
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,6 +56,12 @@ export function useSignalStream(
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
+      // Runs before the next effect (source/symbol/timeframe/mode change)
+      // starts, clearing out the previous pair's stale signal/error rather
+      // than leaving it displayed while the new connection spins up.
+      setSignal(null);
+      setError(null);
+      setConnected(false);
     };
   }, [source, symbol, timeframe, mode, pollSeconds]);
 
