@@ -4,6 +4,7 @@ from datetime import datetime
 
 from ..aggregation.models import AggregatedSignal, AggregationMode
 from ..aggregation.pipeline import default_pipeline
+from ..alerting.dispatcher import AlertDispatcher, build_dispatcher_from_env
 from ..execution.confirmation import ConfirmationLayer
 from ..execution.models import ConfirmationResult
 from ..execution.state_machine import SignalState, SignalStateMachine, SignalStateMachineRegistry
@@ -30,10 +31,11 @@ class SignalRegistry:
     server-side state, not a fresh state machine per HTTP request.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dispatcher: AlertDispatcher | None = None) -> None:
         self._machines = SignalStateMachineRegistry()
         self._last_processed: dict[tuple[str, Timeframe], datetime] = {}
         self._confirmation_layer = ConfirmationLayer()
+        self._dispatcher = dispatcher or build_dispatcher_from_env()
 
     def update(
         self,
@@ -52,8 +54,15 @@ class SignalRegistry:
         last_time = self._last_processed.get(cache_key)
 
         if last_time is None or last_bar.open_time > last_time:
+            old_state = machine.state
             machine.process_bar(last_bar, confirmation)
             self._last_processed[cache_key] = last_bar.open_time
+
+            trade = machine.pending_trade or machine.active_trade
+            source, _, symbol = registry_key.partition(":")
+            self._dispatcher.notify(
+                source, symbol, timeframe.value, old_state, machine.state, trade
+            )
 
         return machine.state, machine, aggregated, confirmation
 

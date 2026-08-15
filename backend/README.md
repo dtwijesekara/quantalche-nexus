@@ -26,7 +26,8 @@ https://twelvedata.com/). Binance's public market-data endpoints need no key.
 | 3 — Aggregation | `quantalche.aggregation` | Combines module signals — `hard_gate` (default) or `soft_score` mode |
 | 5/6 — Confirmation + lifecycle | `quantalche.execution` | Entry/SL/TP calculation, `IDLE → PENDING → SIGNAL_ACTIVE → STOPPED_OUT \| TP_HIT \| EXPIRED → IDLE` state machine |
 | 7 — Backtesting | `quantalche.backtest` | Bar-by-bar replay, walk-forward segmentation, per-module accuracy reporting |
-| 8 — API | `quantalche.api` | FastAPI: REST (`/signals`) + WebSocket (`/ws/signals`) |
+| 8 — API | `quantalche.api` | FastAPI: REST (`/bars`, `/signals`) + WebSocket (`/ws/signals`) |
+| 9 — Alerting | `quantalche.alerting` | Fires on signal state transitions (new/filled/TP/SL/expired) via webhook, Discord, and/or Telegram |
 
 ## Running the API
 
@@ -47,6 +48,18 @@ Interactive docs at `http://127.0.0.1:8000/docs`. WebSocket:
 State is held server-side per `(source, symbol, timeframe)` for the life of
 the process — see `quantalche/api/state.py` for why this can't be
 per-request (architecture.md Layer 6's "one signal per symbol+timeframe").
+
+## Alerting
+
+Set any of `ALERT_WEBHOOK_URL` / `DISCORD_WEBHOOK_URL` /
+(`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`) in `.env` to receive a message
+whenever a signal transitions state (new signal, filled, take-profit hit,
+stopped out, or an unfilled order expiring). None set means no alerts, not
+an error. Webhook and Discord senders are verified against a local mock
+server (message formatting + delivery, exactly-once-per-transition);
+Telegram is implemented directly from the Bot API spec but has not been
+exercised against a real bot/chat — this project has no Telegram
+credentials to test with. See `quantalche/alerting/senders.py`.
 
 ## Manual validation scripts
 
