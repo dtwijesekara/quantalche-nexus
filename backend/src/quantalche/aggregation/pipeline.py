@@ -36,6 +36,23 @@ def default_pipeline(mode: AggregationMode = AggregationMode.HARD_GATE) -> Signa
     name, and per rule-mapping.md, TOUCH3_ENGULFING fires extremely rarely.
     Add a second TrendlineConfluenceModule(variant=TOUCH3_ENGULFING)
     instance to `modules` directly if you want both in the pipeline.
+
+    QuarterlyTheoryModule (analysis/quarterly_theory.py) is intentionally
+    NOT included by default either, for a different and more consequential
+    reason than TOUCH3_ENGULFING's rarity: unlike every other module here,
+    it's *always* active (never neutral -- price is always above or below
+    the daily True Open). Under HARD_GATE, an always-active module must
+    unanimously agree with every other active module on every bar, which
+    makes it a near-permanent filter rather than an occasional vote. Live
+    backtest comparison (1000 bars, BTCUSDT 1h): adding it collapsed
+    hard-gate signal count from 50 to 3 over the same window -- not
+    because the module is weak (55.5% standalone directional accuracy,
+    second only to liquidity_sweep's 58%), but because of how an always-on
+    signal interacts with a unanimity gate specifically. Reported plainly
+    rather than silently included or silently dropped: add
+    QuarterlyTheoryModule() to `modules` directly if you want this
+    trade-off (far fewer, more temporally-selective signals), same
+    opt-in pattern as TOUCH3_ENGULFING above.
     """
 
     modules: list[AnalysisModule] = [
