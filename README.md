@@ -1,5 +1,14 @@
 # Quantalche Nexus
 
+*A trading-signal engine that treats "we don't actually know" as a valid,
+documented answer — not a gap to paper over.*
+
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![TypeScript](https://img.shields.io/badge/typescript-5-blue)
+![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688)
+![Next.js](https://img.shields.io/badge/frontend-Next.js%2016-black)
+![License: none](https://img.shields.io/badge/license-none%20(portfolio%20only)-lightgrey)
+
 A modular trading-signal engine for forex and crypto, built from a 22-document
 private source corpus on the "Alchemist" methodology (and the frameworks it
 synthesizes: ICT, SMC, MSNR, CRT, Quarterly Theory, SMT/SSMT, and others).
@@ -123,6 +132,19 @@ npm run dev
 
 Full setup/usage details: [`backend/README.md`](backend/README.md),
 [`frontend/README.md`](frontend/README.md).
+
+## Limitations, kept visible on purpose
+
+- Multi-module systems can look deceptively strong in backtest purely from
+  combining several factors — the walk-forward segmentation above exists
+  because of that, not as a formality.
+- Where the source corpus doesn't specify exact combination logic, the
+  judgment call made to fill the gap is documented as a judgment call in
+  [`docs/rule-mapping.md`](docs/rule-mapping.md), never presented as if the
+  material said so.
+- This is a decision-support tool a single person built for personal use,
+  evaluated on ~6 weeks of hourly data. It is not a claim of edge robust
+  enough to trade real size on, let alone offer to others.
 
 ## Repo practice
 
