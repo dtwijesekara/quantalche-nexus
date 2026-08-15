@@ -18,13 +18,15 @@ def _run(label: str, bars: list[OHLCBar]) -> None:
     module = LiquiditySweepModule()
     levels, sweeps = module.detect_levels_and_sweeps(bars)
 
+    clustered = sum(1 for lvl in levels if lvl.cluster_size >= 2)
     print(
-        f"\n--- {label}: {len(bars)} bars, {len(levels)} levels, "
-        f"{len(sweeps)} sweeps ---"
+        f"\n--- {label}: {len(bars)} bars, {len(levels)} levels "
+        f"({clustered} in EQH/EQL clusters), {len(sweeps)} sweeps ---"
     )
     for sweep in sweeps[-10:]:
+        eq = f" EQ({sweep.cluster_size}x)" if sweep.cluster_size >= 2 else ""
         print(
-            f"  {sweep.level_type.value.upper():<4} swept at {sweep.at.isoformat()}  "
+            f"  {sweep.level_type.value.upper():<4}{eq} swept at {sweep.at.isoformat()}  "
             f"level={sweep.level_price:.5f}  wick={sweep.wick_extreme:.5f}  "
             f"close={sweep.close_price:.5f}"
         )

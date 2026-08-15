@@ -22,6 +22,11 @@ class LiquidityLevel(BaseModel):
     formed_at: datetime
     swept: bool = False
     swept_at: datetime | None = None
+    cluster_size: int = 1
+    """>=2 means this level is part of an EQH/EQL cluster (docs 08 S55,
+    13 SS92-97) -- several swing extremes close enough together to read as
+    "equal," implying more resting stops than a single isolated swing.
+    """
 
 
 class SweepEvent(BaseModel):
@@ -30,6 +35,7 @@ class SweepEvent(BaseModel):
     at: datetime
     wick_extreme: float
     close_price: float
+    cluster_size: int = 1
 
 
 class LiquiditySweepModule(AnalysisModule):
@@ -73,23 +79,51 @@ class LiquiditySweepModule(AnalysisModule):
     ``swing_strength`` is this module's stand-in lever for that distinction
     until EQH/EQL clustering is built.
 
-    EQH/EQL clustering (grouping nearby swing highs/lows into one stronger
-    liquidity pool, per docs 08 S55 and 13 SS92-97) is intentionally NOT
-    implemented in this version -- it would need a same-materiality-filter
-    judgment call as the SNR Zone module's min_gap_ratio (how close counts
-    as "equal"), and this module works and validates without it. Flagged
-    as a candidate follow-up, not silently folded in.
+    EQH/EQL clustering: grouping nearby same-kind swing extremes into one
+    stronger liquidity pool, per docs 08 S55 and 13 SS92-97 -- doc 08's
+    "Smart Money playbook" narrative singles out equal-level sweeps as a
+    stronger tell than an isolated swing sweep. Implemented as a greedy,
+    price-sorted chain clustering: consecutive same-kind swings (sorted by
+    price) within ``eq_tolerance_ratio`` x average bar range of their
+    neighbor join one cluster. ``eq_tolerance_ratio`` is NOT source-stated
+    -- "how close counts as equal" is never quantified in the corpus --
+    same materiality-filter pattern as SNR Zone's min_gap_ratio, tuned the
+    same way: checked empirically against live data rather than guessed
+    (see rule-mapping.md for the actual numbers). A swept cluster
+    (cluster_size >= 2) gets a real confidence bump over an isolated sweep
+    in evaluate() below, not just a label.
     """
 
     name = "liquidity_sweep"
 
-    def __init__(self, swing_strength: int = 5) -> None:
+    def __init__(self, swing_strength: int = 5, eq_tolerance_ratio: float = 0.05) -> None:
         self.swing_strength = swing_strength
+        self.eq_tolerance_ratio = eq_tolerance_ratio
+
+    def _cluster_sizes(self, swings, avg_range: float) -> dict[int, int]:
+        tolerance = avg_range * self.eq_tolerance_ratio
+        sizes: dict[int, int] = {}
+        for kind in (SwingKind.HIGH, SwingKind.LOW):
+            same_kind = sorted(
+                (s for s in swings if s.kind is kind), key=lambda s: s.price
+            )
+            cluster: list = []
+            for sp in same_kind:
+                if cluster and sp.price - cluster[-1].price > tolerance:
+                    for member in cluster:
+                        sizes[member.index] = len(cluster)
+                    cluster = []
+                cluster.append(sp)
+            for member in cluster:
+                sizes[member.index] = len(cluster)
+        return sizes
 
     def detect_levels_and_sweeps(
         self, bars: list[OHLCBar]
     ) -> tuple[list[LiquidityLevel], list[SweepEvent]]:
         swings = find_swings(bars, self.swing_strength)
+        avg_range = sum(b.high - b.low for b in bars) / len(bars) if bars else 0.0
+        cluster_sizes = self._cluster_sizes(swings, avg_range)
         levels: list[LiquidityLevel] = []
         sweeps: list[SweepEvent] = []
 
@@ -111,6 +145,7 @@ class LiquiditySweepModule(AnalysisModule):
                     ),
                     price=sp.price,
                     formed_at=sp.at,
+                    cluster_size=cluster_sizes.get(sp.index, 1),
                 )
                 levels.append(level)
                 active.append(level)
@@ -139,6 +174,7 @@ class LiquiditySweepModule(AnalysisModule):
                                 else bar.low
                             ),
                             close_price=bar.close,
+                            cluster_size=level.cluster_size,
                         )
                     )
 
@@ -173,17 +209,24 @@ class LiquiditySweepModule(AnalysisModule):
         # A sweep is a contrarian signal: BSL swept (stops above a high
         # taken, price closed back below) => bearish; SSL swept => bullish.
         sweep = fresh_sweeps[-1]
+        is_eq_cluster = sweep.cluster_size >= 2
+        level_label = (
+            f"{'EQH' if sweep.level_type is LiquidityLevelType.BSL else 'EQL'} "
+            f"({sweep.cluster_size}x)"
+            if is_eq_cluster
+            else sweep.level_type.value.upper()
+        )
         if sweep.level_type is LiquidityLevelType.BSL:
             bias = Bias.BEARISH
             reason = (
-                f"BSL swept at {sweep.level_price:.5f} (wick to "
+                f"{level_label} swept at {sweep.level_price:.5f} (wick to "
                 f"{sweep.wick_extreme:.5f}), closed back below at "
                 f"{sweep.close_price:.5f} -- bearish."
             )
         else:
             bias = Bias.BULLISH
             reason = (
-                f"SSL swept at {sweep.level_price:.5f} (wick to "
+                f"{level_label} swept at {sweep.level_price:.5f} (wick to "
                 f"{sweep.wick_extreme:.5f}), closed back above at "
                 f"{sweep.close_price:.5f} -- bullish."
             )
@@ -191,7 +234,7 @@ class LiquiditySweepModule(AnalysisModule):
         return ModuleSignal(
             module=self.name,
             bias=bias,
-            confidence=0.7,
+            confidence=0.8 if is_eq_cluster else 0.6,
             reason=reason,
             bar_time=last.open_time,
             level=sweep.level_price,
