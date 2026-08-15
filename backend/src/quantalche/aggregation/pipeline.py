@@ -76,6 +76,19 @@ def default_pipeline(mode: AggregationMode = AggregationMode.HARD_GATE) -> Signa
     QuarterlyTheoryModule() to `modules` directly if you want this
     trade-off (far fewer, more temporally-selective signals), same
     opt-in pattern as TOUCH3_ENGULFING above.
+
+    PremiumDiscountModule (analysis/premium_discount.py) is excluded for
+    the identical reason, and was checked with the identical methodology
+    before being built into anything: it's also always non-neutral (price
+    is always above or below the current dealing-range midpoint). Live
+    backtest comparison, same 1000-bar windows: adding it to the other 6
+    modules collapsed HARD_GATE signal count from 50 to 0 on BTCUSDT 1h,
+    and from 38 to 0 on EUR/USD 1h -- a *more* severe collapse than
+    QuarterlyTheoryModule's 50-to-3, despite the module itself testing
+    well standalone (51.9% BTCUSDT / 58.1% EUR/USD directional accuracy --
+    the EUR/USD figure ties liquidity_sweep's best-in-class number). Same
+    conservative default applies: kept out rather than in, available as an
+    explicit opt-in -- add PremiumDiscountModule() to `modules` directly.
     """
 
     modules: list[AnalysisModule] = [

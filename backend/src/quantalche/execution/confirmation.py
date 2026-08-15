@@ -32,12 +32,26 @@ class ConfirmationLayer:
         implied elsewhere). Implemented as the nearest opposing BSL/SSL
         liquidity level (liquidity_sweep.py) or swing point (fallback),
         beyond entry.
-      - Minimum 1:1.5 reward:risk is the only quantified TP floor found
-        anywhere in the corpus (docs 01, 10). Enforced here as a hard
-        confirmation gate, not a suggestion: if the nearest opposing
-        candidate doesn't clear it, the next one out is tried; if none
-        does, the signal is rejected as unconfirmed rather than force-fit
-        into a trade.
+      - Minimum reward:risk: docs 01 and 10 both independently state
+        "Maintain RR >= 1:1.5" in a general "Quick Rules Summary" meant to
+        apply to every trade -- two different authors (SYFIRE; AbayFX's
+        expanded manual), both general-baseline claims, both verified
+        directly against the source PDF text (not just the MD notes).
+        Doc 22 separately states a HIGHER floor, "RR >= 1:3," but that
+        figure is not a competing general baseline -- it's stated inside
+        one specific, aggressive account-compounding strategy (5-12% risk
+        per trade, an unvalidated assumed 80% win rate used only in two
+        hypothetical worked examples) that this project's own analysis
+        already flags as an outlier not to trust (see rule-mapping.md).
+        1:1.5 was kept as the default because it's the figure with
+        independent general-context corroboration; 1:3 was previously
+        omitted from this docstring entirely, which incorrectly implied
+        no competing figure existed -- found and corrected after a direct
+        request to re-audit this exact rule against the source PDFs, not
+        a routine pass. Enforced here as a hard confirmation gate, not a
+        suggestion: if the nearest opposing candidate doesn't clear it,
+        the next one out is tried; if none does, the signal is rejected as
+        unconfirmed rather than force-fit into a trade.
 
     SL/TP candidates are pooled from THREE sources -- SNR zones, liquidity
     levels, and raw swing points -- rather than swing points alone (the

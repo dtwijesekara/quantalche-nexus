@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchBars } from "@/lib/api";
 import { useSignalStream } from "@/lib/useSignalStream";
 import { useBinanceLiveKline } from "@/lib/useBinanceLiveKline";
-import { INSTRUMENTS, type AggregationMode, type OHLCBar, type Timeframe } from "@/lib/types";
+import { INSTRUMENTS, type InstrumentOption, type OHLCBar, type Timeframe } from "@/lib/types";
 import { ControlBar } from "@/components/ControlBar";
 import { PriceChart } from "@/components/PriceChart";
 import { AnalysisTerminal } from "@/components/AnalysisTerminal";
@@ -18,18 +18,21 @@ import { AnalysisTerminal } from "@/components/AnalysisTerminal";
 const FOREX_LIVE_POLL_MS = 20_000;
 
 export default function Home() {
-  const [instrumentIndex, setInstrumentIndex] = useState(0);
+  const [instrument, setInstrument] = useState<InstrumentOption>(INSTRUMENTS[0]);
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const [mode, setMode] = useState<AggregationMode>("hard_gate");
   const [bars, setBars] = useState<OHLCBar[]>([]);
 
-  const instrument = INSTRUMENTS[instrumentIndex];
   const isCrypto = instrument.source === "binance";
+  // Live signals only run hard-gate: soft-score's confidence-weighted
+  // average blends module disagreement into one number rather than
+  // surfacing it, which doesn't fit a "trade what's live" dashboard --
+  // it stays available server-side for backtest comparison
+  // (full_backtest_report.py), just not exposed as a live-trading option.
   const { signal, connected, error } = useSignalStream(
     instrument.source,
     instrument.symbol,
     timeframe,
-    mode
+    "hard_gate"
   );
 
   // Real-time last-candle ticks for crypto, straight from Binance's public
@@ -77,12 +80,10 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-[#0a0e17] text-slate-200">
       <ControlBar
-        instrumentIndex={instrumentIndex}
-        onInstrumentChange={setInstrumentIndex}
+        instrument={instrument}
+        onInstrumentChange={setInstrument}
         timeframe={timeframe}
         onTimeframeChange={setTimeframe}
-        mode={mode}
-        onModeChange={setMode}
         connected={connected}
       />
       {error && (

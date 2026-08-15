@@ -1,26 +1,51 @@
 "use client";
 
-import { INSTRUMENTS, TIMEFRAMES, type AggregationMode, type Timeframe } from "@/lib/types";
+import { useState } from "react";
+import {
+  INSTRUMENTS,
+  TIMEFRAMES,
+  type InstrumentOption,
+  type Source,
+  type Timeframe,
+} from "@/lib/types";
 
 interface ControlBarProps {
-  instrumentIndex: number;
-  onInstrumentChange: (index: number) => void;
+  instrument: InstrumentOption;
+  onInstrumentChange: (instrument: InstrumentOption) => void;
   timeframe: Timeframe;
   onTimeframeChange: (timeframe: Timeframe) => void;
-  mode: AggregationMode;
-  onModeChange: (mode: AggregationMode) => void;
   connected: boolean;
 }
 
+// Binance symbols are bare alphanumeric (BTCUSDT); Twelve Data symbols are
+// typically slash-paired (EUR/USD) but also cover plain tickers/indices --
+// only uppercase+trim there, don't strip characters the source might need.
+function normalizeSymbol(source: Source, raw: string): string {
+  const trimmed = raw.trim().toUpperCase();
+  return source === "binance" ? trimmed.replace(/[^A-Z0-9]/g, "") : trimmed;
+}
+
 export function ControlBar({
-  instrumentIndex,
+  instrument,
   onInstrumentChange,
   timeframe,
   onTimeframeChange,
-  mode,
-  onModeChange,
   connected,
 }: ControlBarProps) {
+  const [analyzeSource, setAnalyzeSource] = useState<Source>("binance");
+  const [analyzeSymbol, setAnalyzeSymbol] = useState("");
+
+  const watchlistIndex = INSTRUMENTS.findIndex(
+    (inst) => inst.source === instrument.source && inst.symbol === instrument.symbol
+  );
+  const isCustom = watchlistIndex === -1;
+
+  function handleAnalyze() {
+    const symbol = normalizeSymbol(analyzeSource, analyzeSymbol);
+    if (!symbol) return;
+    onInstrumentChange({ source: analyzeSource, symbol, label: symbol });
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950 px-4 py-3">
       <div className="mr-2 flex items-center gap-2">
@@ -34,9 +59,14 @@ export function ControlBar({
 
       <select
         className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-        value={instrumentIndex}
-        onChange={(e) => onInstrumentChange(Number(e.target.value))}
+        value={watchlistIndex}
+        onChange={(e) => onInstrumentChange(INSTRUMENTS[Number(e.target.value)])}
       >
+        {isCustom && (
+          <option value={-1} disabled>
+            Custom: {instrument.label}
+          </option>
+        )}
         <optgroup label="Crypto">
           {INSTRUMENTS.map((inst, i) =>
             inst.source === "binance" ? (
@@ -73,20 +103,32 @@ export function ControlBar({
         ))}
       </div>
 
-      <div className="flex rounded-md border border-slate-700 bg-slate-900 p-0.5 text-sm">
-        {(["hard_gate", "soft_score"] as AggregationMode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => onModeChange(m)}
-            className={`rounded px-2.5 py-1 transition-colors ${
-              mode === m
-                ? "bg-cyan-600 text-white"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {m === "hard_gate" ? "Hard Gate" : "Soft Score"}
-          </button>
-        ))}
+      <div className="ml-auto flex items-center gap-1.5">
+        <select
+          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 focus:border-cyan-500 focus:outline-none"
+          value={analyzeSource}
+          onChange={(e) => setAnalyzeSource(e.target.value as Source)}
+          aria-label="Analyze source"
+        >
+          <option value="binance">Crypto</option>
+          <option value="twelvedata">Forex</option>
+        </select>
+        <input
+          type="text"
+          placeholder={analyzeSource === "binance" ? "e.g. DOGEUSDT" : "e.g. USD/JPY"}
+          value={analyzeSymbol}
+          onChange={(e) => setAnalyzeSymbol(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
+          className="w-32 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
+          aria-label="Symbol to analyze"
+        />
+        <button
+          onClick={handleAnalyze}
+          disabled={!analyzeSymbol.trim()}
+          className="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Analyze
+        </button>
       </div>
     </div>
   );
