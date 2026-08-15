@@ -86,7 +86,7 @@ class LiquiditySweepModule(AnalysisModule):
     def __init__(self, swing_strength: int = 5) -> None:
         self.swing_strength = swing_strength
 
-    def _levels_and_sweeps(
+    def detect_levels_and_sweeps(
         self, bars: list[OHLCBar]
     ) -> tuple[list[LiquidityLevel], list[SweepEvent]]:
         swings = find_swings(bars, self.swing_strength)
@@ -157,7 +157,7 @@ class LiquiditySweepModule(AnalysisModule):
                 bar_time=bars[-1].open_time if bars else datetime.now(timezone.utc),
             )
 
-        _, sweeps = self._levels_and_sweeps(bars)
+        _, sweeps = self.detect_levels_and_sweeps(bars)
         last = bars[-1]
 
         fresh_sweeps = [s for s in sweeps if s.at == last.open_time]

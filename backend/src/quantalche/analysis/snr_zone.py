@@ -169,7 +169,7 @@ class SNRZoneModule(AnalysisModule):
                 )
         return zones
 
-    def _detect_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
+    def detect_zones(self, bars: list[OHLCBar]) -> list[SNRZone]:
         if len(bars) < 2:
             return []
 
@@ -223,7 +223,7 @@ class SNRZoneModule(AnalysisModule):
                 bar_time=bars[-1].open_time if bars else datetime.now(timezone.utc),
             )
 
-        zones = self._detect_zones(bars)
+        zones = self.detect_zones(bars)
         last = bars[-1]
 
         # A zone can't react to the very bar that created it.
