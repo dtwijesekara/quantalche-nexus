@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from starlette.concurrency import run_in_threadpool
 
 from ..aggregation.models import AggregationMode
-from ..ingestion.models import Timeframe
+from ..ingestion.models import OHLCBar, Timeframe
 from .schemas import SignalResponse
-from .service import SignalServiceError, build_signal_response
+from .service import SignalServiceError, build_signal_response, fetch_bars
 
 logger = logging.getLogger("quantalche.api")
 
@@ -19,6 +19,23 @@ router = APIRouter()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/bars", response_model=list[OHLCBar])
+def get_bars(
+    source: str = Query(..., pattern="^(binance|twelvedata)$"),
+    symbol: str = Query(..., min_length=1),
+    timeframe: Timeframe = Query(Timeframe.H1),
+    limit: int = Query(300, ge=1, le=1000),
+) -> list[OHLCBar]:
+    """Raw closed OHLC bars -- what the frontend's price chart renders.
+    Separate from /signals since a chart needs the underlying series, not
+    just the derived signal.
+    """
+    try:
+        return fetch_bars(source, symbol, timeframe, limit)
+    except SignalServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 @router.get("/signals", response_model=SignalResponse)

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import httpx
+
 from ..aggregation.models import AggregationMode
 from ..config import TWELVE_DATA_API_KEY
 from ..ingestion.base import OHLCClient
 from ..ingestion.binance_client import BinanceClient
-from ..ingestion.models import Timeframe
+from ..ingestion.models import OHLCBar, Timeframe
 from ..ingestion.twelvedata_client import TwelveDataClient
 from .schemas import SignalResponse
 from .state import signal_registry
@@ -39,6 +41,46 @@ def _make_client(source: str) -> OHLCClient:
     )
 
 
+def fetch_bars(
+    source: str, symbol: str, timeframe: Timeframe, limit: int
+) -> list[OHLCBar]:
+    """Fetch bars from the upstream data source, converting upstream
+    failures (rate limits, timeouts, bad symbols) into a clean
+    SignalServiceError instead of letting them escape as an unhandled
+    exception.
+
+    This matters beyond error-message quality: an unhandled exception
+    here produces a raw FastAPI 500 that doesn't reliably carry CORS
+    response headers, which browsers then report as a generic "CORS
+    policy" error -- hiding the real cause (e.g. a Twelve Data free-tier
+    rate limit) behind a misleading one. Found via live browser testing,
+    not a unit test -- see rule-mapping.md.
+    """
+    client = _make_client(source)
+    try:
+        return client.get_ohlc(symbol, timeframe, limit=limit)
+    except SignalServiceError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise SignalServiceError(
+            f"Timed out fetching data from {source} for {symbol}.", status_code=504
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise SignalServiceError(
+            f"{source} rejected the request for {symbol} "
+            f"(HTTP {exc.response.status_code}) -- possibly an unsupported "
+            f"symbol or a rate limit.",
+            status_code=502,
+        ) from exc
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        raise SignalServiceError(
+            f"Failed to fetch data from {source} for {symbol}: {exc}",
+            status_code=502,
+        ) from exc
+    finally:
+        client.close()
+
+
 def build_signal_response(
     source: str,
     symbol: str,
@@ -51,11 +93,7 @@ def build_signal_response(
     has closed since the last call. Safe to call repeatedly for the same
     symbol -- see SignalRegistry's docstring for the idempotency guarantee.
     """
-    client = _make_client(source)
-    try:
-        bars = client.get_ohlc(symbol, timeframe, limit=limit)
-    finally:
-        client.close()
+    bars = fetch_bars(source, symbol, timeframe, limit)
 
     if len(bars) < MIN_BARS_REQUIRED:
         raise SignalServiceError(
