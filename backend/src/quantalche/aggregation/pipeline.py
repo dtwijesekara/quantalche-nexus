@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ..analysis.base import AnalysisModule
+from ..analysis.crt_pattern import CRTModule
 from ..analysis.liquidity_sweep import LiquiditySweepModule
 from ..analysis.market_structure import MarketStructureModule
 from ..analysis.qm_pattern import QMModule
@@ -28,7 +29,7 @@ class SignalPipeline:
 
 
 def default_pipeline(mode: AggregationMode = AggregationMode.HARD_GATE) -> SignalPipeline:
-    """The 5 validated Phase 2/3 modules with their validated defaults.
+    """The validated Layer 2 modules with their validated defaults.
 
     TrendlineConfluenceModule's TOUCH3_ENGULFING variant is not included
     here by default (only TOUCH3_SIMPLE is) -- both share the same module
@@ -43,5 +44,6 @@ def default_pipeline(mode: AggregationMode = AggregationMode.HARD_GATE) -> Signa
         LiquiditySweepModule(),
         TrendlineConfluenceModule(),
         QMModule(),
+        CRTModule(),
     ]
     return SignalPipeline(modules=modules, aggregator=Aggregator(mode=mode))
